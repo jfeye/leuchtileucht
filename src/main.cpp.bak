@@ -1,0 +1,198 @@
+#include <Arduino.h>
+#include <NRF24.h>
+#include <SPI.h>
+#include <FastLED.h>
+
+NRF24 nrf24(9, 10);
+
+# define PAYLOAD_SIZE 8
+float payload[PAYLOAD_SIZE];
+
+#define NUM_LEDS 204
+CRGB leds[NUM_LEDS];
+
+void setup() {
+  //Serial.begin(9600);
+
+  //while (!Serial) 
+  //  ; // wait for serial port to connect. Needed for Leonardo only
+
+  if (!nrf24.init())
+    Serial.println("NRF24 init failed");
+  if (!nrf24.setChannel(3))
+    Serial.println("setChannel failed");
+  if (!nrf24.setThisAddress((uint8_t*)"serv4", 5))
+    Serial.println("setThisAddress failed");
+  if (!nrf24.setPayloadSize(PAYLOAD_SIZE * sizeof(float)))
+    Serial.println("setPayloadSize failed");
+  if (!nrf24.setRF(NRF24::NRF24DataRate1Mbps, NRF24::NRF24TransmitPowerm12dBm))
+    Serial.println("setRF failed");   
+
+  int i;
+  for(i=0; i<PAYLOAD_SIZE; i++){
+    payload[i] = 0;
+  }
+  
+  delay( 1000 ); // power-up safety delay
+  FastLED.addLeds<WS2812B, 13, GRB>(leds, NUM_LEDS).setCorrection( TypicalLEDStrip );
+  FastLED.setBrightness( 50 );
+
+
+  //Serial.println("initialised!");
+}
+
+void four_colors_smooth(){
+  FastLED.setBrightness(80);
+  int i;
+  for(i=0; i<NUM_LEDS; i++){
+    leds[i] = CHSV((((i/51)*50) +millis()/30)%255, 255, 255);
+  }
+}
+
+void rainbow(){
+  FastLED.setBrightness(80);
+  
+  int i;
+  for(i=0; i<NUM_LEDS; i++){
+    leds[i] = CHSV((i +millis()/5)%255, 255, 255);
+  }
+}
+
+void blink_random(){ 
+  FastLED.setBrightness(255);
+  
+  int i;
+  for(i=0; i<NUM_LEDS; i++){
+    leds[i] = CRGB::Black;
+  }  
+
+  int seg = (millis()/150) %4;
+
+  if(seg == 1) seg = 2;
+  else if(seg == 2) seg = 1;
+  
+  for(i=seg*51; i<(seg*51+51); i++){
+    leds[i] = CHSV((((i/51)*50) +millis()/30)%255, 255, 255);
+  }  
+}
+
+
+void sequence(){ 
+  FastLED.setBrightness(255);  
+  int i;
+  for(i=0; i<NUM_LEDS; i++){
+    if((millis()/500)%2==0){
+      leds[i] = CRGB::Black;
+    }else{      
+      leds[i] = CHSV(millis()/100,255,80);
+    }
+  }
+  CRGB color = CHSV((millis()/20) % 255, 255, 255);
+
+  for(i=0; i<NUM_LEDS; i++){
+    if((millis()/5)%(NUM_LEDS) == i){
+      leds[i] = color;
+      if(i < NUM_LEDS-1) leds[i+1] = color;
+      if(i < NUM_LEDS-2)  leds[i+2] = color;
+      if(i < NUM_LEDS-3) leds[i+3] = color;
+      if(i < NUM_LEDS-4) leds[i+4] = color;
+      if(i < NUM_LEDS-5) leds[i+5] = color;
+      if(i < NUM_LEDS-6) leds[i+6] = color;
+      leds[NUM_LEDS-i] = color;
+      if(i < NUM_LEDS-1) leds[NUM_LEDS-(i+1)] = color;
+      if(i < NUM_LEDS-2) leds[NUM_LEDS-(i+2)] = color;
+      if(i < NUM_LEDS-3) leds[NUM_LEDS-(i+3)] = color;
+      if(i < NUM_LEDS-4)  leds[NUM_LEDS-(i+4)] = color;
+      if(i < NUM_LEDS-5)  leds[NUM_LEDS-(i+5)] = color;
+      if(i < NUM_LEDS-6)  leds[NUM_LEDS-(i+6)] = color;
+    }     
+  }
+
+}
+
+void strobo(){ 
+  int seg = (millis()/50) %4;
+  
+  FastLED.setBrightness(255);
+
+  int i;
+  for(i=0; i<NUM_LEDS; i++){
+    leds[i] = (seg==0)? CRGB::White:CRGB::Black;
+  }  
+}
+
+void loop(){
+
+  while(true){
+    switch(analogRead(5)/200){
+      case 0:
+        rainbow();
+      break;
+      case 1:
+        four_colors_smooth();
+      break;
+      case 2:
+        blink_random();
+      break;
+      case 3:
+        sequence();
+      break;
+      default:
+        strobo();
+    }
+    //FastLED.setBrightness((uint8_t)(analogRead(5)/4));
+    //Serial.println(analogRead(5));
+    FastLED.show();
+    delay(20);
+  }
+
+  Serial.println("waiting");
+  nrf24.waitAvailable();
+
+  Serial.println("recv");  
+
+  uint8_t len = sizeof(payload);
+  if (!nrf24.recv((uint8_t*)&payload, &len))
+    Serial.println("read failed");  
+  if (!nrf24.setTransmitAddress((uint8_t*)"clie4", 5))
+   Serial.println("setTransmitAddress failed");
+  
+  /*
+  uint8_t data[1] = {0};
+  len = sizeof(data);
+  if (!nrf24.send((uint8_t*)&data, len))
+     Serial.println("send failed");  
+  if (!nrf24.waitPacketSent()) 
+     Serial.println("waitPacketSent failed");  
+  */
+  String out = "";
+  out += "ACC     " + String(payload[0]) + " " + String(payload[1]) + " " + String(payload[2]) + "\n";
+  //out += "P / ALT " + String(payload[3]) + " " + String(payload[4]) + "\n";
+  //out += "ROT     " + String(payload[5]) + " " + String(payload[6]) + " " + String(payload[7]) + "\n";
+  out += "MAG     " + String(payload[3]) + " " + String(payload[4]) + " " + String(payload[5]) + "\n";
+  out += "AZ      " + String(payload[6]) + "\n";
+  out += "TEMP    " + String(payload[7]) + "\n";
+     
+
+  String state = "";
+  if(payload[0] > 7) state += "+";
+  else if(payload[0] < -7) state += "-";
+  else state += "0";
+  if(payload[1] > 7) state += "+";
+  else if(payload[1] < -7) state += "-";
+  else state += "0";
+  if(payload[2] > 7) state += "+";
+  else if(payload[2] < -7) state += "-";
+  else state += "0";
+
+
+  if(state == "-00")  leds[0] = CRGB::White;
+  else if (state == "+00")  leds[0] = CRGB::Black;
+  else if (state == "0-0")  leds[0] = CRGB::Red;
+  else if (state == "0+0")  leds[0] = CRGB::Green;
+  else if (state == "00-")  leds[0] = CRGB::Blue;
+  else if (state == "00+")  leds[0] = CHSV((millis()/20)%255,255,255);
+  FastLED.show();
+  Serial.println(state + "\n" + out);
+  
+}
